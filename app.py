@@ -9,6 +9,8 @@ st.markdown("""
     <style>
     .stApp { max-width: 600px; margin: 0 auto; }
     div.stButton > button { width: 100%; border-radius: 20px; }
+    /* Un pequeño truco para que el botón del nombre se vea diferente */
+    button[kind="secondary"] { border: none; background: transparent; text-align: left; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -18,23 +20,15 @@ st.title("🐾 Petsgram")
 if 'posts' not in st.session_state:
     st.session_state['posts'] = []
 
-# Variable para saber qué perfil ver (Navegación interna)
+# Variable memoria para la navegación entre perfiles
 if 'perfil_destino' not in st.session_state:
     st.session_state['perfil_destino'] = None
 
-# --- 3. MENÚ LATERAL INTELIGENTE ---
-# Si queremos cambiar de página por código, necesitamos un truco con el 'key'
-if 'menu_actual' not in st.session_state:
-    st.session_state['menu_actual'] = "El Parque 🌳 (Feed)"
-
-# Callback para actualizar el menú manual
-def actualizar_menu():
-    st.session_state['menu_actual'] = st.session_state.nav_radio
-
+# --- 3. MENÚ LATERAL ---
+# Usamos un key para poder detectar cambios si fuera necesario
 menu = st.sidebar.radio(
     "Navegación", 
     ["El Parque 🌳 (Feed)", "Nuevo Post 📸", "Encontrar Amigo 🔎"],
-    key="nav_radio", # Clave para vincularlo al estado
 )
 
 # --- 4. SECCIÓN: SUBIR FOTO ---
@@ -62,16 +56,12 @@ if menu == "Nuevo Post 📸":
             }
             st.session_state['posts'].append(nuevo_post)
             st.success("¡Guau! Publicado.")
-            st.session_state['perfil_destino'] = None # Reseteamos destino
+            st.session_state['perfil_destino'] = nombre # Auto-seleccionar al propio perro
             st.balloons()
 
-# --- 5. SECCIÓN: EL FEED (Con redirección) ---
+# --- 5. SECCIÓN: EL FEED (Donde ocurre la magia del clic) ---
 elif menu == "El Parque 🌳 (Feed)":
     st.header("Comunidad")
-    
-    # Reseteamos la búsqueda al entrar al parque
-    # (Opcional: Si quieres que recuerde, borra esta línea)
-    # st.session_state['perfil_destino'] = None 
     
     if not st.session_state['posts']:
         st.info("El parque está vacío.")
@@ -81,80 +71,94 @@ elif menu == "El Parque 🌳 (Feed)":
         
         for i, post in enumerate(reversed(posts_a_mostrar)):
             with st.container(border=True):
-                # CABECERA INTERACTIVA
+                
+                # --- CABECERA: AHORA EL NOMBRE ES UN LINK ---
                 c1, c2 = st.columns([0.7, 0.3])
-                c1.subheader(f"{post['emocion']} | {post['nombre']}")
-                c2.caption(f"{post['fecha']}")
+                
+                with c1:
+                    # Usamos un botón que dice el nombre. Si le das clic -> Guardamos destino
+                    label_boton = f"👤 {post['nombre']} | {post['emocion']}"
+                    if st.button(label_boton, key=f"user_link_{i}", help="Ir al perfil"):
+                        st.session_state['perfil_destino'] = post['nombre']
+                        st.toast(f"¡Has seleccionado a {post['nombre']}! Ve a la pestaña 'Encontrar Amigo'", icon="👀")
+                
+                with c2:
+                    st.caption(f"{post['fecha']}")
                 
                 # FOTO
                 st.image(post['foto'], use_container_width=True)
                 st.write(f"**{post['nombre']} dice:** {post['mensaje']}")
+                
                 st.markdown("---")
                 
-                # BOTONES
-                cl, cp, cs = st.columns(3)
+                # --- BARRA SOCIAL (RECUPERADA) ---
+                col_like, col_comm, col_share = st.columns(3)
                 
-                # Like
-                if cl.button(f"🐾 {post['likes']}", key=f"like_{i}"):
+                # 1. Like
+                if col_like.button(f"🐾 {post['likes']}", key=f"like_{i}"):
                     post['likes'] += 1
                     st.rerun()
                 
-                # Botón PERFIL (La magia ocurre aquí)
-                # Al hacer clic, configuramos el destino y recargamos la página forzando el menú
-                if cp.button(f"👤 Ver Perfil", key=f"perfil_{i}"):
-                    st.session_state['perfil_destino'] = post['nombre']
-                    # NOTA: En Streamlit puro, cambiar el radio button programáticamente es complejo.
-                    # Usaremos un mensaje visual y la variable de estado para la próxima vez que clic en el menú,
-                    # O simplemente mostramos un link directo.
-                    # Truco simple: Mensaje Toast + Instrucción (Más estable)
-                    # O Truco avanzado: Forzar cambio de página (puede ser inestable en algunas versiones)
-                    st.info(f"¡Yendo al perfil de {post['nombre']}! Ve a la pestaña 'Encontrar Amigo'")
+                # 2. Comentar (Solo visual por ahora o abre el expander)
+                col_comm.button("💬", key=f"btn_comm_{i}")
                     
-                cs.button("🔗", key=f"share_{i}")
+                # 3. Compartir
+                if col_share.button("🔗", key=f"share_{i}"):
+                    st.toast("Link copiado")
 
-# --- 6. SECCIÓN: ENCONTRAR AMIGO (Dinámica) ---
+                # Sección de Comentarios (Debajo de la barra)
+                with st.expander(f"Ver comentarios ({len(post['comentarios'])})"):
+                    for c in post['comentarios']:
+                        st.text(f"🗣 {c}")
+                    nc = st.text_input("Comentar...", key=f"new_comm_{i}")
+                    if st.button("Enviar", key=f"send_comm_{i}"):
+                        if nc:
+                            post['comentarios'].append(nc)
+                            st.rerun()
+
+# --- 6. SECCIÓN: ENCONTRAR AMIGO (Buscador) ---
 elif menu == "Encontrar Amigo 🔎":
-    st.header("Perfil de Mascota")
+    st.header("Buscador de Mascotas")
     
-    # Obtenemos lista de nombres
     nombres_unicos = list(set([p['nombre'] for p in st.session_state['posts']]))
     
     if not nombres_unicos:
         st.warning("No hay mascotas aún.")
     else:
-        # LÓGICA DE SELECCIÓN AUTOMÁTICA
-        # Si venimos del feed (hay un destino guardado) y ese destino existe:
+        # LÓGICA DE BÚSQUEDA INTELIGENTE
+        # 1. Determinamos qué índice seleccionar en la lista
         idx_seleccion = 0
         if st.session_state['perfil_destino'] in nombres_unicos:
             idx_seleccion = nombres_unicos.index(st.session_state['perfil_destino'])
         
-        # El Selectbox ahora intenta seleccionar automáticamente lo que guardamos
+        # 2. EL BUSCADOR (Selectbox permite escribir para buscar)
         seleccionado = st.selectbox(
-            "Buscar amigo:", 
+            "🔍 Escribe el nombre para buscar:", 
             nombres_unicos, 
             index=idx_seleccion
         )
         
-        # Actualizamos la variable de destino por si el usuario cambia el selectbox manualmente
+        # Actualizamos el estado por si cambiaste manualmente en el buscador
         st.session_state['perfil_destino'] = seleccionado
 
         # --- MOSTRAR EL PERFIL ---
         posts_mascota = [p for p in st.session_state['posts'] if p['nombre'] == seleccionado]
         
         st.markdown("---")
-        col_avatar, col_info = st.columns([0.3, 0.7])
-        with col_avatar:
-            st.title("🐶") 
-        with col_info:
+        # Header del Perfil
+        col_pic, col_data = st.columns([0.3, 0.7])
+        with col_pic:
+            st.title("🐕") # Aquí iría la foto de perfil real en el futuro
+        with col_data:
             st.title(seleccionado)
-            st.caption(f"Perfil verificado de {seleccionado}")
+            st.info(f"Viendo el perfil oficial de {seleccionado}")
         
         # Stats
         m1, m2 = st.columns(2)
         m1.metric("Fotos", len(posts_mascota))
-        m1.metric("Huellitas Totales", sum([p['likes'] for p in posts_mascota]))
+        m1.metric("Fans (Likes)", sum([p['likes'] for p in posts_mascota]))
         
-        st.subheader("📸 Recuerdos")
+        st.subheader("📸 Muro Personal")
         cols = st.columns(3)
         for index, post in enumerate(posts_mascota):
             with cols[index % 3]: 
