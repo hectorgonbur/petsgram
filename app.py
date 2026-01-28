@@ -1,65 +1,86 @@
 import streamlit as st
 from datetime import datetime
 
-# --- 1. CONFIGURACIÓN DE LA PÁGINA (El "Cartel de Obra") ---
-st.set_page_config(page_title="Petsgram", page_icon="🐾")
+# --- 1. CONFIGURACIÓN ESTRUCTURAL ---
+st.set_page_config(page_title="Petsgram", page_icon="🐾", layout="centered")
+
+# Estilos CSS para que se vea limpio (como app móvil)
+st.markdown("""
+    <style>
+    .stApp { max-width: 600px; margin: 0 auto; }
+    div.stButton > button { width: 100%; border-radius: 20px; }
+    </style>
+""", unsafe_allow_html=True)
 
 st.title("🐾 Petsgram")
-st.write("La red social donde los humanos no importan.")
 
-# --- 2. LOS CIMIENTOS (Base de datos temporal) ---
-# En una obra real, esto sería de hormigón (SQL). 
-# Aquí, usaremos la "memoria" de la sesión como una estructura temporal.
-# Si no existe la lista de posts, la creamos vacía.
+# --- 2. GESTIÓN DE ESTADO (MEMORIA) ---
 if 'posts' not in st.session_state:
     st.session_state['posts'] = []
 
-# --- 3. CIRCULACIÓN (Sidebar / Menú) ---
-# Diseñamos la navegación en la barra lateral
-menu = st.sidebar.radio("Menú", ["El Parque 🌳 (Feed)", "Nuevo Post 📸"])
+# --- 3. MENÚ LATERAL ---
+menu = st.sidebar.radio("Navegación", ["El Parque 🌳 (Feed)", "Nuevo Post 📸"])
 
-# --- 4. ESPACIO 1: NUEVO POST (Área de Carga) ---
+# --- 4. SECCIÓN: SUBIR FOTO ---
 if menu == "Nuevo Post 📸":
-    st.header("Sube una foto de tu mascota")
+    st.header("Crear Publicación")
     
-    # El Formulario: Inputs del usuario
-    with st.form("post_form"):
-        nombre = st.text_input("Nombre de la mascota (ej: Firulais)")
-        mensaje = st.text_area("¿Qué está haciendo? (ej: Persiguiendo su cola)")
-        # Por ahora, simulamos la foto con un selector de "emoción" para no complicar con archivos reales hoy
-        emocion = st.selectbox("Estado de ánimo", ["🐶 Feliz", "🐱 Gruñón", "😴 Dormilón", "🤪 Loco"])
+    with st.form("post_form", clear_on_submit=True):
+        col1, col2 = st.columns(2)
+        with col1:
+            nombre = st.text_input("Nombre")
+        with col2:
+            # ¡Aquí vuelve tu idea de los emojis! Define el "Mood" de la foto
+            emocion = st.selectbox("¿Cómo se siente?", 
+                                 ["🐶 Feliz", "🤪 Loco", "😴 Dormilón", "😎 Cool", "🥺 Tierno"])
         
-        # El botón de "Confirmar construcción"
-        submitted = st.form_submit_button("¡Publicar!")
+        mensaje = st.text_area("Pie de foto")
+        foto = st.file_uploader("Sube la foto", type=['jpg', 'png', 'jpeg'])
         
-        if submitted:
-            # Creamos el "bloque" de datos del post
+        submitted = st.form_submit_button("¡Publicar en el parque!")
+        
+        if submitted and foto:
             nuevo_post = {
                 "nombre": nombre,
-                "mensaje": mensaje,
                 "emocion": emocion,
-                "fecha": datetime.now().strftime("%H:%M")
+                "mensaje": mensaje,
+                "foto": foto,
+                "fecha": datetime.now().strftime("%H:%M"),
+                "likes": 0 # Inicializamos el contador de huellitas
             }
-            
-            # Lo agregamos a nuestros cimientos (la lista de posts)
             st.session_state['posts'].append(nuevo_post)
-            
-            st.success("¡Publicado con éxito!")
-            st.balloons() # ¡El toque de celebración!
+            st.success("¡Guau! Publicado.")
+            st.balloons()
 
-# --- 5. ESPACIO 2: EL PARQUE (El Feed) ---
+# --- 5. SECCIÓN: EL FEED ---
 elif menu == "El Parque 🌳 (Feed)":
-    st.header("Últimas novedades del parque")
+    st.header("Comunidad")
     
-    # Verificamos si hay algo construido
-    if len(st.session_state['posts']) == 0:
-        st.info("El parque está vacío... ¡Sé el primero en publicar!")
+    if not st.session_state['posts']:
+        st.info("El parque está vacío. ¡Sube la primera foto!")
     else:
-        # Recorremos la lista de posts (del último al primero para ver lo nuevo arriba)
-        for post in reversed(st.session_state['posts']):
-            # Usamos un "expander" o contenedor para cada post
+        # Loop para mostrar cada post
+        # Usamos 'enumerate' para tener un ID único para cada botón de huellita
+        for i, post in enumerate(reversed(st.session_state['posts'])):
+            
             with st.container(border=True):
-                # Estructura del Post: Título grande y texto abajo
-                st.subheader(f"{post['emocion']} - {post['nombre']}")
-                st.write(post['mensaje'])
-                st.caption(f"Publicado a las {post['fecha']}")
+                # CABECERA: El Emoji + El Nombre (Tu idea de identidad)
+                st.subheader(f"{post['emocion']}  |  {post['nombre']}")
+                st.caption(f"Subido a las {post['fecha']}")
+                
+                # FOTO
+                st.image(post['foto'], use_container_width=True)
+                
+                # PIE DE FOTO
+                st.write(f"**{post['nombre']} dice:** {post['mensaje']}")
+                
+                # INTERACCIÓN: LA HUELLITA
+                # Creamos columnas para que el botón no sea gigante
+                col_a, col_b = st.columns([0.3, 0.7])
+                
+                with col_a:
+                    # El botón necesita una "key" única para saber a qué foto pertenece
+                    if st.button(f"🐾 Dar Huellita", key=f"like_{i}"):
+                        st.write("¡Diste amor! ❤️")
+                        # Nota: En esta versión simple sin base de datos, 
+                        # el like es visual para el usuario en el momento.
