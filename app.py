@@ -18,8 +18,24 @@ st.title("🐾 Petsgram")
 if 'posts' not in st.session_state:
     st.session_state['posts'] = []
 
-# --- 3. MENÚ LATERAL (Ahora con 3 opciones) ---
-menu = st.sidebar.radio("Navegación", ["El Parque 🌳 (Feed)", "Nuevo Post 📸", "Perfiles 🐕"])
+# Variable para saber qué perfil ver (Navegación interna)
+if 'perfil_destino' not in st.session_state:
+    st.session_state['perfil_destino'] = None
+
+# --- 3. MENÚ LATERAL INTELIGENTE ---
+# Si queremos cambiar de página por código, necesitamos un truco con el 'key'
+if 'menu_actual' not in st.session_state:
+    st.session_state['menu_actual'] = "El Parque 🌳 (Feed)"
+
+# Callback para actualizar el menú manual
+def actualizar_menu():
+    st.session_state['menu_actual'] = st.session_state.nav_radio
+
+menu = st.sidebar.radio(
+    "Navegación", 
+    ["El Parque 🌳 (Feed)", "Nuevo Post 📸", "Encontrar Amigo 🔎"],
+    key="nav_radio", # Clave para vincularlo al estado
+)
 
 # --- 4. SECCIÓN: SUBIR FOTO ---
 if menu == "Nuevo Post 📸":
@@ -36,7 +52,7 @@ if menu == "Nuevo Post 📸":
         
         if submitted and foto and nombre:
             nuevo_post = {
-                "nombre": nombre, # Importante: Usaremos esto para agrupar el perfil
+                "nombre": nombre,
                 "emocion": emocion,
                 "mensaje": mensaje,
                 "foto": foto,
@@ -46,89 +62,101 @@ if menu == "Nuevo Post 📸":
             }
             st.session_state['posts'].append(nuevo_post)
             st.success("¡Guau! Publicado.")
+            st.session_state['perfil_destino'] = None # Reseteamos destino
             st.balloons()
 
-# --- 5. SECCIÓN: EL FEED ---
+# --- 5. SECCIÓN: EL FEED (Con redirección) ---
 elif menu == "El Parque 🌳 (Feed)":
     st.header("Comunidad")
+    
+    # Reseteamos la búsqueda al entrar al parque
+    # (Opcional: Si quieres que recuerde, borra esta línea)
+    # st.session_state['perfil_destino'] = None 
+    
     if not st.session_state['posts']:
         st.info("El parque está vacío.")
     else:
-        # Filtro opcional
         filtro = st.multiselect("Filtrar por mood:", ["🐶 Feliz", "🤪 Loco", "😴 Dormilón", "😎 Cool", "🥺 Tierno"])
         posts_a_mostrar = [p for p in st.session_state['posts'] if not filtro or p['emocion'] in filtro]
         
         for i, post in enumerate(reversed(posts_a_mostrar)):
             with st.container(border=True):
+                # CABECERA INTERACTIVA
                 c1, c2 = st.columns([0.7, 0.3])
                 c1.subheader(f"{post['emocion']} | {post['nombre']}")
                 c2.caption(f"{post['fecha']}")
+                
+                # FOTO
                 st.image(post['foto'], use_container_width=True)
                 st.write(f"**{post['nombre']} dice:** {post['mensaje']}")
                 st.markdown("---")
                 
-                # Botones de acción
-                cl, cc, cs = st.columns(3)
+                # BOTONES
+                cl, cp, cs = st.columns(3)
+                
+                # Like
                 if cl.button(f"🐾 {post['likes']}", key=f"like_{i}"):
                     post['likes'] += 1
                     st.rerun()
-                cc.button("💬", key=f"comm_{i}")
-                cs.button("🔗", key=f"share_{i}")
                 
-                # Comentarios
-                if post['comentarios']:
-                    with st.expander(f"Comentarios ({len(post['comentarios'])})"):
-                        for c in post['comentarios']:
-                            st.text(f"👤 {c}")
+                # Botón PERFIL (La magia ocurre aquí)
+                # Al hacer clic, configuramos el destino y recargamos la página forzando el menú
+                if cp.button(f"👤 Ver Perfil", key=f"perfil_{i}"):
+                    st.session_state['perfil_destino'] = post['nombre']
+                    # NOTA: En Streamlit puro, cambiar el radio button programáticamente es complejo.
+                    # Usaremos un mensaje visual y la variable de estado para la próxima vez que clic en el menú,
+                    # O simplemente mostramos un link directo.
+                    # Truco simple: Mensaje Toast + Instrucción (Más estable)
+                    # O Truco avanzado: Forzar cambio de página (puede ser inestable en algunas versiones)
+                    st.info(f"¡Yendo al perfil de {post['nombre']}! Ve a la pestaña 'Encontrar Amigo'")
+                    
+                cs.button("🔗", key=f"share_{i}")
 
-# --- 6. SECCIÓN NUEVA: PERFILES ---
-elif menu == "Perfiles 🐕":
-    st.header("Perfiles de Mascotas")
+# --- 6. SECCIÓN: ENCONTRAR AMIGO (Dinámica) ---
+elif menu == "Encontrar Amigo 🔎":
+    st.header("Perfil de Mascota")
     
-    # Paso 1: Encontrar a todas las mascotas únicas que han publicado
-    if not st.session_state['posts']:
-        st.warning("No hay mascotas registradas aún. ¡Sube una foto primero!")
+    # Obtenemos lista de nombres
+    nombres_unicos = list(set([p['nombre'] for p in st.session_state['posts']]))
+    
+    if not nombres_unicos:
+        st.warning("No hay mascotas aún.")
     else:
-        # Obtenemos la lista de nombres únicos (usando set)
-        nombres_unicos = list(set([p['nombre'] for p in st.session_state['posts']]))
+        # LÓGICA DE SELECCIÓN AUTOMÁTICA
+        # Si venimos del feed (hay un destino guardado) y ese destino existe:
+        idx_seleccion = 0
+        if st.session_state['perfil_destino'] in nombres_unicos:
+            idx_seleccion = nombres_unicos.index(st.session_state['perfil_destino'])
         
-        # Paso 2: Seleccionar a quién queremos ver
-        seleccionado = st.selectbox("¿De quién quieres ver el perfil?", nombres_unicos)
+        # El Selectbox ahora intenta seleccionar automáticamente lo que guardamos
+        seleccionado = st.selectbox(
+            "Buscar amigo:", 
+            nombres_unicos, 
+            index=idx_seleccion
+        )
         
-        # Paso 3: Filtrar los posts de ESA mascota
+        # Actualizamos la variable de destino por si el usuario cambia el selectbox manualmente
+        st.session_state['perfil_destino'] = seleccionado
+
+        # --- MOSTRAR EL PERFIL ---
         posts_mascota = [p for p in st.session_state['posts'] if p['nombre'] == seleccionado]
         
-        # --- DISEÑO DEL PERFIL ---
         st.markdown("---")
-        
-        # Encabezado del Perfil
         col_avatar, col_info = st.columns([0.3, 0.7])
-        
         with col_avatar:
-            # Usamos un emoji gigante o la última foto como avatar
             st.title("🐶") 
-        
         with col_info:
             st.title(seleccionado)
-            st.caption("Ciudadano de Petsgram")
+            st.caption(f"Perfil verificado de {seleccionado}")
         
-        # Métricas (Stats) - ¡Esto le da el toque profesional!
-        total_likes = sum([p['likes'] for p in posts_mascota])
-        total_fotos = len(posts_mascota)
+        # Stats
+        m1, m2 = st.columns(2)
+        m1.metric("Fotos", len(posts_mascota))
+        m1.metric("Huellitas Totales", sum([p['likes'] for p in posts_mascota]))
         
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Publicaciones", total_fotos)
-        m1.metric("Huellitas", total_likes)
-        m3.metric("Seguidores", "Coming Soon") # Placeholder para el futuro
-        
-        st.markdown("---")
-        st.subheader("📸 Galería de Fotos")
-        
-        # Galería en Cuadrícula (Grid)
-        # Mostramos las fotos en filas de 3
+        st.subheader("📸 Recuerdos")
         cols = st.columns(3)
         for index, post in enumerate(posts_mascota):
-            # Lógica matemática para distribuir en columnas: 0, 1, 2, 0, 1, 2...
             with cols[index % 3]: 
                 st.image(post['foto'], use_container_width=True)
-                st.caption(post['emocion'])
+                st.caption(post['fecha'])
